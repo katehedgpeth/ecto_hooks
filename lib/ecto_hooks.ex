@@ -127,7 +127,14 @@ defmodule EctoHooks do
 
       struct
       |> get_schema_module()
-      |> execute_hook(hook, struct, delta && Delta.new!(caller_function, hook, delta))
+      |> execute_hook(
+        hook,
+        if delta do
+          [struct, Delta.new!(caller_function, hook, delta)]
+        else
+          [struct]
+        end
+      )
     end
 
     def unquote(hook)(data, _delta, _caller_function) do
@@ -143,18 +150,21 @@ defmodule EctoHooks do
     end
   end
 
-  defp execute_hook(schema, hook, param_1, param_2) do
+  defp execute_hook(schema, hook, args) do
+    default = List.first(args)
+
     if State.hooks_enabled?() do
       :ok = State.disable_hooks(global: false)
       :ok = State.acquire_hook()
 
-      apply(schema, hook, [param_1 | (param_2 && [param_2]) || []])
+      if Kernel.function_exported?(schema, hook, length(args)) do
+        apply(schema, hook, args)
+      else
+        default
+      end
     else
-      param_1
+      default
     end
-  rescue
-    _e in [UndefinedFunctionError, FunctionClauseError] ->
-      param_1
   after
     :ok = State.enable_hooks(global: false)
     :ok = State.release_hook()
